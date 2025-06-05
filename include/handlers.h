@@ -43,6 +43,8 @@ extern int32_t wp_x, wp_y;
 extern float wp_z, wp_delay;
 extern String can_arm;
 extern String arm_errors;
+extern String mission_ok;
+
 // Tablica punktów misji
 extern MissionPoint mission_points[MISSION_COUNT];
 

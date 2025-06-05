@@ -121,6 +121,7 @@ void handle_sys_status(mavlink_message_t *msg)
 
 void prepare_new_mission(int32_t x, int32_t y, float z, float delay)
 {
+
     mission_points[0] = MissionPoint(0, MAV_FRAME_GLOBAL, MAV_CMD_NAV_WAYPOINT, 0, WAYPOINT_RADIUS, WAYPOINT_PASS_RADIUS, 0, wp_x, wp_y, wp_z);
     mission_points[1] = MissionPoint(1, MAV_FRAME_GLOBAL, MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, z);
     mission_points[2] = MissionPoint(2, MAV_FRAME_GLOBAL, MAV_CMD_NAV_WAYPOINT, delay, WAYPOINT_RADIUS, WAYPOINT_PASS_RADIUS, 0, x, y, z);
@@ -160,7 +161,7 @@ void handle_mission_ack(mavlink_message_t *msg)
         is_mission_uploaded = false;
         // punkty wgrane - wyślij potwierdzenie do serwera
         handle_mission_upload_success();
-        Serial.println("Punkty wgrane");
+        mission_ok = "Punkty wgrane";
     }
 }
 
@@ -200,8 +201,8 @@ void handle_gps_raw_int(mavlink_message_t *msg)
 {
     mavlink_gps_raw_int_t msg_gps;
     mavlink_msg_gps_raw_int_decode(msg, &msg_gps);
-    curr_x = msg_gps.lat / 1e7;
-    curr_y = msg_gps.lon / 1e7;
+    curr_x = msg_gps.lat ;
+    curr_y = msg_gps.lon ;
     curr_z_m = msg_gps.alt / 1000;
     fix_type = msg_gps.fix_type;
     satellites = msg_gps.satellites_visible;

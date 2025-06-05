@@ -12,12 +12,16 @@ WiFiUDP udp;
 MissionPoint mission_points[MISSION_COUNT];
 
 const unsigned int localPort = 12346; // port nasłuchu
-const char *pcIp = "192.168.35.156";  // IP komputera z aplikacją Qt
+const char *pcIp = "192.168.35.138";  // IP komputera z aplikacją Qt
 const unsigned int pcPort = 12345;    // port PC do wysyłki danych
 
-const IPAddress localIp(192, 168, 35, 100); // << IP ESP32
-const IPAddress gateway(192, 168, 35, 1);   // << brama
-const IPAddress subnet(255, 255, 255, 0);   // << maska
+// const IPAddress localIp(192, 168, 35, 100); // k1
+// const IPAddress localIp(192, 168, 35, 101); // k2
+// const IPAddress localIp(192, 168, 35, 102); // k3
+const IPAddress localIp(192, 168, 35, 103); // k4
+
+const IPAddress gateway(192, 168, 35, 1); // << brama
+const IPAddress subnet(255, 255, 255, 0); // << maska
 // const IPAddress dns(8, 8, 8, 8);            // << opcjonalnie
 
 const int MAVLINK_RX_PIN = D0;
@@ -29,7 +33,8 @@ const unsigned long HEARTBEAT_INTERVAL_MS = 1000;
 // const unsigned long GLOBAL_POSITION_DELAY = 10000;
 const unsigned long GPS_INTERVAL_US = 1000000;
 const unsigned long PARAM_INTERVAL_US = 1000000;
-const unsigned long telemetryInterval = 1000; // 5 sekund
+const unsigned long telemetryInterval = 1000;
+const unsigned long missionOkInterval = 5000;
 
 HardwareSerial mavlink_serial(1);
 uint8_t fc_system_id = 0;
@@ -38,6 +43,8 @@ unsigned long last_heartbeat = 0;
 uint16_t mission_count = 0;
 uint32_t mission_opaque_id = 0;
 unsigned long lastSendTime = 0;
+unsigned long lastmissionOkInterval = 0;
+String mission_ok = "Nie wgrywam";
 
 int32_t wp_x;
 int32_t wp_y;
@@ -63,13 +70,16 @@ uint8_t fix_type;               // https://mavlink.io/en/messages/common.html#GP
 uint8_t satellites;
 String can_arm;
 String arm_errors;
+
+float MISS_ALT = 55;
+int POINT_DELAY = 5;
 // to proszę wywołać jak odbierzesz punkty z serwera
 void set_wp(int32_t x, int32_t y, float z, float delay)
 {
   wp_x = x;
   wp_y = y;
   wp_z = z;
-  wp_delay = delay; // czas wiszenia
+  wp_delay = POINT_DELAY; // czas wiszenia
   is_new_mission = true;
 }
 
@@ -87,7 +97,8 @@ void setup()
     delay(500);
     Serial.print(".");
   }
-  Serial.println("\nPolaczono! IP: " + WiFi.localIP().toString());
+  Serial.println("\
+    ! IP: " + WiFi.localIP().toString());
 
   udp.begin(localPort);
   // mavlinkSerial.setRxBufferSize(2048);
@@ -95,6 +106,8 @@ void setup()
 
   while (!is_mavlink_connected)
   {
+    Serial.print(".");
+
     mavlink_message_t msg;
     mavlink_status_t status;
 
@@ -140,22 +153,53 @@ void loop()
       Serial.println("Odebrano wspolrzedne: " + String(buffer));
 
       // Parsowanie współrzędnych
-      float x = 0.0, y = 0.0;
-      if (sscanf(buffer, "%f,%f", &x, &y) == 2)
-      {
-        Serial.print("X = ");
-        Serial.println(x);
-        Serial.print("Y = ");
-        Serial.println(y);
 
-        // Przykład użycia
-        set_wp(1, 1, x, y); // lub dowolne inne parametry misji
+      if (buffer[0] == 'Z')
+      {
+        if (sscanf(buffer, "Z%d,%f", &POINT_DELAY, &MISS_ALT) == 2)
+        {
+
+          Serial.print("POINT_DELAY = ");
+          Serial.println(POINT_DELAY);
+          Serial.print("MISS_ALT = ");
+          Serial.println(MISS_ALT);
+        }
+        else
+        {
+          Serial.println("Błąd parsowania współrzędnych!");
+        }
       }
       else
       {
-        Serial.println("Błąd parsowania współrzędnych!");
+        float x = 0.0, y = 0.0;
+        if (sscanf(buffer, "%f,%f", &x, &y) == 2)
+        {
+          x *= 1e7;
+          y *= 1e7;
+          Serial.print("X = ");
+          Serial.println(x);
+          Serial.print("Y = ");
+          Serial.println(y);
+
+          Serial.println(curr_z_m);
+
+          Serial.print("curr_z_m + MISS_ALT = ");
+          Serial.println(curr_z_m + MISS_ALT);
+          set_wp(x, y, curr_z_m + MISS_ALT, POINT_DELAY); // lub dowolne inne parametry misji
+        }
+        else
+        {
+          Serial.println("Błąd parsowania współrzędnych!");
+        }
       }
     }
+  }
+  if (millis() - lastmissionOkInterval >= missionOkInterval)
+  {
+
+    lastmissionOkInterval = millis();
+    mission_ok = "Nie wgrywam";
+    arm_errors = "0";
   }
 
   // Wysyłanie telemetrii co X sekund
@@ -164,8 +208,8 @@ void loop()
 
     lastSendTime = millis();
 
-    String msg = can_arm + "\nARMING CHECKS: \n" + arm_errors + "\n" +
-                 "GPS: lat: " + String(curr_x, 4) + " lon: " + String(curr_y, 4) +
+    String msg = mission_ok + "\n" + can_arm + "\nARMING CHECKS: \n" + arm_errors + "\n" +
+                 "GPS: lat: " + String(curr_x / 1e7, 4) + " lon: " + String(curr_y / 1e7, 4) +
                  " alt: " + String(curr_z_m, 2) + " sats: " + String(satellites, DEC) + "\n";
     udp.beginPacket(pcIp, pcPort);
     udp.print(msg);
